@@ -1,0 +1,90 @@
+syntax = "proto2";
+option java_multiple_files = true;
+
+package aca.proto;
+
+message ChatMsg {
+   required int64 time = 1;
+   optional string metadata = 42;
+
+   oneof msg {
+      ServerStatus serverStatus = 2;
+      UserLoggedIn userLoggedIn = 3;
+      UserLoggedOut userLoggedOut = 4;
+      UserSentGlobalMessage userSentGlobalMessage = 5;
+      UserSentPrivateMessage userSentPrivateMessage = 7;
+      Failure failure = 6;
+   }
+
+   message ServerStatus {
+      required string status = 1;
+   }
+
+   message UserLoggedIn {
+      required string userName = 1;
+   }
+
+   message UserLoggedOut {
+      required string userName = 1;
+   }
+
+   message UserSentGlobalMessage {
+      required string userName = 2;
+      required string message = 1;
+   }
+
+   message UserSentPrivateMessage {
+      required string sender = 2;
+      repeated string receiver = 3;
+      required string message = 1;
+   }
+
+   message Failure {
+      optional string message = 1;
+   }
+}
+
+
+message ChatMessage {
+   // v1
+   required int64 time = 1;
+   required string sender = 2;
+   required string content = 3;
+
+   // v2
+   optional string metadata = 4;
+}
+
+message Msg {
+   required int64 time = 1;
+   required string sender = 2;
+
+   oneof msgTypes {
+      StringOpRequest stringOperationRequest = 11;
+      StringOpResponse stringOperationResponse = 12;
+   }
+
+   message StringOpRequest {
+      enum OperationType {
+         REVERSE = 1;
+         TOUPPERCASE = 2;
+      }
+
+      required string content = 3;
+      optional OperationType operationType = 4;
+   }
+
+   message StringOpResponse {
+      required string result = 1;
+   }
+}
+
+message Login {
+   required int64 time = 1;
+   required string sender = 2;
+}
+
+message Logout {
+   required int64 time = 1;
+   required string sender = 2;
+}

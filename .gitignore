@@ -1,0 +1,8 @@
+.DS_Store
+/target
+/.idea
+/*.iml
+!/.idea/runConfigurations
+!/.idea/dictionaries
+/log
+/keys
