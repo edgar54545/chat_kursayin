@@ -1,20 +1,32 @@
 package kursayin.team0.db;
 
 import aca.proto.ChatMsg;
+import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.Row;
+import com.datastax.driver.core.Session;
 
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 
 public final class Database {
     private Connection connection;
+    private Cluster cluster;
+    private Session cassandraSession;
 
     private Comparator<ChatMsg> comparator = Comparator.comparingLong(ChatMsg::getTime);
 
     public void createConnection() throws SQLException {
         connection = DriverManager.getConnection("jdbc:mysql://localhost:3306/kursayin", "root", "root");
+        cluster = Cluster.builder()
+                .withClusterName("cassandra")
+                .addContactPoint("127.0.0.1")
+                .build();
+
+        cassandraSession = cluster.connect("kursayin");
     }
 
     public boolean isUsernameFree(String username) throws SQLException {
@@ -47,7 +59,7 @@ public final class Database {
             connection.createStatement().execute("INSERT INTO users VALUES ('" + username + "', 1);");
         }
         long timestamp = loginMessage.getTime();
-        connection.createStatement().execute("INSERT INTO logins VALUES (NULL, '" + username + "', " + timestamp + ");");
+        cassandraSession.execute("INSERT INTO logins (username, time) VALUES ('" + username + "', " + timestamp + ");");
     }
 
     public void addLogout(ChatMsg logoutMessage) throws SQLException, IllegalArgumentException {
@@ -57,7 +69,7 @@ public final class Database {
         String username = logoutMessage.getUserLoggedOut().getUserName();
         connection.createStatement().execute("UPDATE users SET is_active = 0 WHERE username = '" + username + "'");
         long timestamp = logoutMessage.getTime();
-        connection.createStatement().execute("INSERT INTO logouts VALUES (NULL, '" + username + "', " + timestamp + ");");
+        cassandraSession.execute("INSERT INTO logouts (username, time) VALUES ('" + username + "', " + timestamp + ");");
     }
 
     public void addGlobalMessage(ChatMsg globalMessage) throws SQLException, IllegalArgumentException {
@@ -67,7 +79,8 @@ public final class Database {
         String username = globalMessage.getUserSentGlobalMessage().getUserName();
         String message = globalMessage.getUserSentGlobalMessage().getMessage();
         long timestamp = globalMessage.getTime();
-        connection.createStatement().execute("INSERT INTO global_messages VALUES (NULL, '" +
+
+        cassandraSession.execute("INSERT INTO global_messages (username, message, time) VALUES ('" +
                 username + "', '" + message + "', " + timestamp + ");");
     }
 
@@ -79,7 +92,7 @@ public final class Database {
         List<String> receivers = privateMessage.getUserSentPrivateMessage().getReceiverList();
         String message = privateMessage.getUserSentPrivateMessage().getMessage();
         long timestamp = privateMessage.getTime();
-        connection.createStatement().execute("INSERT INTO private_messages VALUES (NULL, '" + username +
+        cassandraSession.execute("INSERT INTO private_messages (username, receivers, message, time) VALUES ('" + username +
                 "', '" + String.join(" ", receivers) + "', '" + message + "', " + timestamp + ");");
     }
 
@@ -95,12 +108,13 @@ public final class Database {
 
     private List<ChatMsg> getLoginHistory() throws SQLException {
         List<ChatMsg> logins = new ArrayList<>();
-        ResultSet resultSet = connection.createStatement().executeQuery("SELECT username, time FROM logins;");
-        while (resultSet.next()) {
+        com.datastax.driver.core.ResultSet rows =
+                cassandraSession.execute("SELECT username, time FROM logins;");
+        for (Row row : rows) {
             ChatMsg login = ChatMsg.newBuilder()
-                    .setTime(resultSet.getLong("time"))
+                    .setTime(row.getLong("time"))
                     .setUserLoggedIn(ChatMsg.UserLoggedIn.newBuilder()
-                            .setUserName(resultSet.getString("username")))
+                            .setUserName(row.getString("username")))
                     .build();
             logins.add(login);
         }
@@ -109,12 +123,12 @@ public final class Database {
 
     private List<ChatMsg> getLogoutHistory() throws SQLException {
         List<ChatMsg> logouts = new ArrayList<>();
-        ResultSet resultSet = connection.createStatement().executeQuery("SELECT username, time FROM logouts;");
-        while (resultSet.next()) {
+        com.datastax.driver.core.ResultSet rows = cassandraSession.execute("SELECT username, time FROM logouts;");
+        for (Row row : rows) {
             ChatMsg logout = ChatMsg.newBuilder()
-                    .setTime(resultSet.getLong("time"))
+                    .setTime(row.getLong("time"))
                     .setUserLoggedOut(ChatMsg.UserLoggedOut.newBuilder()
-                            .setUserName(resultSet.getString("username")))
+                            .setUserName(row.getString("username")))
                     .build();
             logouts.add(logout);
         }
@@ -123,13 +137,14 @@ public final class Database {
 
     private List<ChatMsg> getGlobalMessageHistory() throws SQLException {
         List<ChatMsg> globalMessages = new ArrayList<>();
-        ResultSet resultSet = connection.createStatement().executeQuery("SELECT sender, message, time FROM global_messages;");
-        while (resultSet.next()) {
+        com.datastax.driver.core.ResultSet rows =
+                cassandraSession.execute("SELECT username, message, time FROM global_messages;");
+        for (Row row : rows) {
             ChatMsg globalMessage = ChatMsg.newBuilder()
-                    .setTime(resultSet.getLong("time"))
+                    .setTime(row.getLong("time"))
                     .setUserSentGlobalMessage(ChatMsg.UserSentGlobalMessage.newBuilder()
-                            .setUserName(resultSet.getString("sender"))
-                            .setMessage(resultSet.getString("message")))
+                            .setUserName(row.getString("username"))
+                            .setMessage(row.getString("message")))
                     .build();
             globalMessages.add(globalMessage);
         }
@@ -138,17 +153,17 @@ public final class Database {
 
     private List<ChatMsg> getPrivateMessageHistory(String username) throws SQLException {
         List<ChatMsg> privateMessages = new ArrayList<>();
-        ResultSet resultSet = connection.createStatement().executeQuery("SELECT * FROM private_messages;");
-        while (resultSet.next()) {
-            String[] receivers = resultSet.getString("receivers").split(" ");
+        com.datastax.driver.core.ResultSet rows = cassandraSession.execute("SELECT * FROM private_messages;");
+        for (Row row : rows) {
+            String[] receivers = row.getString("receivers").split(" ");
             Iterable<String> allReceivers = Arrays.asList(receivers);
             for (String receiver : receivers) {
                 if (receiver.equals(username)) {
                     ChatMsg privateMessage = ChatMsg.newBuilder()
-                            .setTime(resultSet.getLong("time"))
+                            .setTime(row.getLong("time"))
                             .setUserSentPrivateMessage(ChatMsg.UserSentPrivateMessage.newBuilder()
-                                    .setSender(resultSet.getString("sender"))
-                                    .setMessage(resultSet.getString("message"))
+                                    .setSender(row.getString("username"))
+                                    .setMessage(row.getString("message"))
                                     .addAllReceiver(allReceivers))
                             .build();
                     privateMessages.add(privateMessage);
@@ -160,12 +175,13 @@ public final class Database {
 
     private List<ChatMsg> getFailureHistory() throws SQLException {
         List<ChatMsg> failures = new ArrayList<>();
-        ResultSet resultSet = connection.createStatement().executeQuery("SELECT failure, time FROM failures;");
-        while (resultSet.next()) {
+        com.datastax.driver.core.ResultSet rows =
+                cassandraSession.execute("SELECT failure, time FROM failures;");
+        for (Row row : rows) {
             ChatMsg failure = ChatMsg.newBuilder()
-                    .setTime(resultSet.getLong("time"))
+                    .setTime(row.getLong("time"))
                     .setFailure(ChatMsg.Failure.newBuilder()
-                            .setMessage(resultSet.getString("failure")))
+                            .setMessage(row.getString("failure")))
                     .build();
             failures.add(failure);
         }

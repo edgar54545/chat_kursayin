@@ -57,7 +57,7 @@ public class NonBlockingServer {
                             socketChannel.configureBlocking(false);
                             ChatMsg serverStatus = ChatMsg.newBuilder()
                                     .setTime(System.currentTimeMillis())
-                                    .setServerStatus(ChatMsg.ServerStatus.newBuilder().setStatus("Server has been created by team0 (Minas, Edgar, Arpine)").build())
+                                    .setServerStatus(ChatMsg.ServerStatus.newBuilder().setStatus("Running...").build())
                                     .build();
                             ByteBuffer buffer = ByteBuffer.allocate(1024);
                             write(buffer, serverStatus);
